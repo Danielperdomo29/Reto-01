@@ -222,9 +222,86 @@
           <span class="min-w-0"><span class="block truncate text-slate-100">${escapeHtml(nombre)}</span><span class="block truncate text-[10px] text-slate-500">${escapeHtml(dir)}</span></span>`;
         return esDir
           ? `<li class="flex items-center gap-2 p-2 rounded-lg bg-slate-800/60 border border-slate-700">${contenido}</li>`
-          : `<li><a href="${href}" download class="flex items-center gap-2 p-2 rounded-lg bg-slate-800/60 hover:bg-slate-800 border border-slate-700 transition">${contenido}</a></li>`;
+          : `<li class="space-y-1"><a href="${href}" download class="flex items-center gap-2 p-2 rounded-lg bg-slate-800/60 hover:bg-slate-800 border border-slate-700 transition">${contenido}</a>${nombre === "valores-portal.md" ? `<div class="flex justify-end">${botonCopiar(ruta)}</div>` : ""}</li>`;
       }).join("");
     }
+
+    function rutaADescarga(ruta) {
+      return "/api/files/" + ruta.split("/").slice(1).map(encodeURIComponent).join("/");
+    }
+
+    function iconoArchivo(nombre) {
+      const ext = (nombre.split(".").pop() || "").toLowerCase();
+      const mapa = {
+        xlsx: ["XLSX", "bg-emerald-600/30 border-emerald-500/40 text-emerald-200"],
+        pdf: ["PDF", "bg-rose-600/30 border-rose-500/40 text-rose-200"],
+        md: ["MD", "bg-indigo-600/30 border-indigo-500/40 text-indigo-200"],
+        txt: ["TXT", "bg-slate-600/30 border-slate-500/40 text-slate-200"],
+        json: ["JSON", "bg-amber-600/30 border-amber-500/40 text-amber-200"],
+      };
+      return mapa[ext] || [ext.toUpperCase().slice(0, 4) || "FILE", "bg-slate-600/30 border-slate-500/40 text-slate-200"];
+    }
+
+    function botonCopiar(ruta) {
+      return `<button type="button" data-copy="${escapeHtml(ruta)}" class="shrink-0 px-2.5 py-1 rounded-md bg-amber-500/20 hover:bg-amber-500/40 border border-amber-400/50 text-amber-200 text-[11px] font-semibold transition">Copiar valores</button>`;
+    }
+
+    function renderTarjetasArchivos(toolCalls) {
+      const rutas = new Set();
+      (toolCalls || []).forEach((tc) => { if (tc.ok) extraerRutas(tc.result, rutas); });
+      const archivosTurno = [...rutas].filter((r) => /\.[A-Za-z0-9]+$/.test(r.split("/").slice(-1)[0]));
+      const entregables = archivosTurno.filter((r) => !/(^|\/)(mapeo\.json|log\.jsonl)$/.test(r));
+      if (entregables.length === 0) return "";
+      return `
+        <div class="mt-3 border border-slate-700 rounded-xl bg-slate-950/60 overflow-hidden">
+          <div class="px-3 py-2 text-[11px] uppercase tracking-wide text-slate-400 font-semibold border-b border-slate-800">Archivos generados (${entregables.length})</div>
+          <ul class="divide-y divide-slate-800">
+            ${entregables.map((ruta) => {
+              const nombre = ruta.split("/").slice(-1)[0];
+              const dir = ruta.split("/").slice(0, -1).join("/");
+              const [etq, clase] = iconoArchivo(nombre);
+              const copiar = nombre === "valores-portal.md" ? botonCopiar(ruta) : "";
+              return `<li class="flex items-center gap-3 px-3 py-2">
+                <span class="shrink-0 w-11 text-center text-[10px] font-bold rounded border py-1 ${clase}">${escapeHtml(etq)}</span>
+                <span class="min-w-0 flex-1"><span class="block truncate text-slate-100 text-xs">${escapeHtml(nombre)}</span><span class="block truncate text-[10px] text-slate-500">${escapeHtml(dir)}</span></span>
+                ${copiar}
+                <a href="${rutaADescarga(ruta)}" download class="shrink-0 px-2.5 py-1 rounded-md bg-indigo-600 hover:bg-indigo-500 text-white text-[11px] font-semibold transition">Descargar</a>
+              </li>`;
+            }).join("")}
+          </ul>
+        </div>`;
+    }
+
+    async function copiarValores(boton) {
+      const ruta = boton.getAttribute("data-copy");
+      const original = boton.textContent;
+      try {
+        const res = await fetch(rutaADescarga(ruta));
+        if (!res.ok) throw new Error("HTTP " + res.status);
+        const texto = await res.text();
+        if (navigator.clipboard && window.isSecureContext) {
+          await navigator.clipboard.writeText(texto);
+        } else {
+          const ta = document.createElement("textarea");
+          ta.value = texto;
+          ta.style.position = "fixed";
+          ta.style.opacity = "0";
+          document.body.appendChild(ta);
+          ta.select();
+          document.execCommand("copy");
+          ta.remove();
+        }
+        boton.textContent = "Copiado";
+      } catch {
+        boton.textContent = "Error al copiar";
+      }
+      setTimeout(() => (boton.textContent = original), 1800);
+    }
+
+    document.addEventListener("click", (e) => {
+      const b = e.target.closest("[data-copy]");
+      if (b) copiarValores(b);
+    });
 
     function renderToolCalls(toolCalls) {
       if (!toolCalls || toolCalls.length === 0) return "";
@@ -292,6 +369,7 @@
         botDiv.innerHTML = `${AVATAR_BOT}
           <div class="min-w-0 max-w-3xl bg-slate-900 border ${conf ? "border-amber-400 ring-1 ring-amber-400/50" : "border-slate-800"} rounded-2xl rounded-tl-sm p-4 text-sm text-slate-200">
             <div class="md">${renderMarkdown(data.reply)}</div>
+            ${renderTarjetasArchivos(data.toolCalls)}
             ${renderToolCalls(data.toolCalls)}
           </div>`;
         chatContainer.appendChild(botDiv);

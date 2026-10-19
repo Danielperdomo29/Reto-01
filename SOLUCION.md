@@ -28,6 +28,16 @@ El área administrativa de **Periferia IT Group** (específicamente la **analist
 - **Conocimiento (`src/knowledge/registro-proveedor.md` y `modulo/skill/registro-proveedor/SKILL.md`):** Centraliza las reglas de negocio RN1 a RN5 sin acoplarlas al servidor HTTP.
 - **Ejecución (`src/tools/proveedor.ts`):** Cinco herramientas deterministas tipadas con `zod` (`leer_solicitud`, `mapear_campos`, `generar_formulario`, `armar_paquete`, `simular_envio`), reutilizadas idénticamente por `demo.ts`, el servidor HTTP y el paquete `modulo/`.
 
+### 2.1 Decision de arquitectura: el LLM orquesta, el servidor ejecuta
+El modelo de lenguaje **nunca** construye el Excel, el PDF ni el borrador de correo. Su unica responsabilidad es interpretar la peticion y devolver una llamada estructurada a una herramienta (`proveedor_generar_formulario`, `proveedor_armar_paquete`, etc.). Quien escribe las celdas, dibuja el PDF y copia los soportes es el servidor Node.js con `exceljs` y `pdf-lib`, dentro de un entorno controlado y auditable.
+
+Por que es una decision deliberada y no una limitacion:
+- **Seguridad y privacidad:** una empresa no debe enviar datos sensibles (NIT, cuentas bancarias, representantes legales) a un LLM externo para que "dibuje" un documento. El modelo solo recibe metadatos y resultados resumidos; los valores finales se leen del repositorio maestro en el servidor y se escriben directamente en el archivo.
+- **Cero invencion (CA2):** como el contenido del formulario sale de `out/<caso>/mapeo.json` (calculado de forma determinista), el modelo no puede inyectar ni alterar valores aunque lo intente.
+- **Determinismo y auditoria (RN5):** cada herramienta deja un evento en `out/log.jsonl`. El mismo caso produce siempre el mismo archivo, verificable sin LLM con `demo.ts`.
+- **Costo y robustez:** al reducir el trabajo del modelo a "decidir cuando llamar a una funcion", un modelo gratuito con temperatura `0.1` es suficiente y el sistema tolera cambiar de modelo (cadena de respaldo automatica) sin tocar las reglas de negocio.
+- **Experiencia de entrega:** el servidor expone `GET /api/files/<ruta>` con `Content-Disposition: attachment` y proteccion contra path traversal. El frontend muestra tarjetas de descarga por archivo (`.xlsx`, `.pdf`, `.md`) y, para formato `portal`, un boton "Copiar valores" que lleva `valores-portal.md` al portapapeles.
+
 ---
 
 ## 3. Ciclo del agente
