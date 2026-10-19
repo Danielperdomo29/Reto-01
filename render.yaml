@@ -23,3 +23,9 @@ services:
         value: "25"
       - key: MAX_TOKENS_PER_SESSION
         value: "60000"
+      - key: MAX_GLOBAL_TOKENS
+        value: "500000"
+      # Fecha fija del PRD para que los 4 casos reproduzcan la matriz de resultados esperada.
+      # Eliminar esta variable para usar la fecha real de ejecucion (RN3).
+      - key: REFERENCE_DATE
+        value: "2026-09-03"
