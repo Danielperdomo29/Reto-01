@@ -369,6 +369,34 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  // GET /api/files/<ruta dentro de out/> : descarga segura de archivos generados
+  if (req.method === "GET" && url.pathname.startsWith("/api/files/")) {
+    const rel = decodeURIComponent(url.pathname.replace("/api/files/", ""));
+    const outRoot = path.resolve(directory, "out");
+    const abs = path.resolve(outRoot, rel);
+    const dentroDeOut = abs === outRoot || abs.startsWith(outRoot + path.sep);
+    if (!dentroDeOut || !fs.existsSync(abs) || !fs.statSync(abs).isFile()) {
+      res.writeHead(404, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ ok: false, error: "Archivo no encontrado" }));
+      return;
+    }
+    const ext = path.extname(abs).toLowerCase();
+    const tipos: Record<string, string> = {
+      ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      ".pdf": "application/pdf",
+      ".md": "text/markdown; charset=utf-8",
+      ".json": "application/json",
+      ".jsonl": "text/plain; charset=utf-8",
+      ".txt": "text/plain; charset=utf-8",
+    };
+    res.writeHead(200, {
+      "Content-Type": tipos[ext] || "application/octet-stream",
+      "Content-Disposition": `attachment; filename="${path.basename(abs)}"`,
+    });
+    res.end(fs.readFileSync(abs));
+    return;
+  }
+
   // Servir Frontend (web/index.html)
   if (req.method === "GET" && (url.pathname === "/" || url.pathname === "/index.html")) {
     const htmlPath = path.join(directory, "web", "index.html");

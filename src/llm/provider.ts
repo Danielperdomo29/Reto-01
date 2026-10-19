@@ -57,6 +57,12 @@ interface GeminiResponse {
   };
 }
 
+const FALLBACK_MODELS = [
+  "nvidia/nemotron-3-ultra-550b-a55b:free",
+  "nvidia/nemotron-3-super-120b-a12b:free",
+  "google/gemma-4-31b-it:free",
+];
+
 export class UnifiedLLMAdapter implements LLMAdapter {
   public readonly providerName: string;
   public modelName: string;
@@ -68,7 +74,7 @@ export class UnifiedLLMAdapter implements LLMAdapter {
     if (preferred === "openrouter" || process.env.OPENROUTER_API_KEY) {
       this.providerName = "openrouter";
       this.modelName =
-        process.env.OPENROUTER_MODEL || "nvidia/nemotron-3-super-120b-a12b:free";
+        process.env.OPENROUTER_MODEL || "nvidia/nemotron-3-ultra-550b-a55b:free";
       this.apiKey = process.env.OPENROUTER_API_KEY || "";
     } else if (
       preferred === "openai" ||
@@ -227,34 +233,41 @@ export class UnifiedLLMAdapter implements LLMAdapter {
       headers["X-Title"] = "Periferia Agente Registro Proveedor";
     }
 
-    try {
-      return await this.ejecutarRequestOpenAI(
-        endpoint,
-        headers,
-        this.modelName,
-        oaMessages,
-        herramientas
-      );
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : String(err);
-      if (
-        this.providerName === "openrouter" &&
-        msg.includes("MODEL_UNAVAILABLE") &&
-        this.modelName !== "nvidia/nemotron-3-super-120b-a12b:free"
-      ) {
-        const fallback = "nvidia/nemotron-3-super-120b-a12b:free";
-        console.warn(`[LLM] Modelo '${this.modelName}' no disponible. Reintentando con '${fallback}'...`);
-        this.modelName = fallback;
-        return await this.ejecutarRequestOpenAI(
+    const cadena = [
+      this.modelName,
+      ...FALLBACK_MODELS.filter((m) => m !== this.modelName),
+    ];
+    const candidatos = this.providerName === "openrouter" ? cadena : [this.modelName];
+
+    let ultimoError: unknown = null;
+    for (const modelo of candidatos) {
+      try {
+        const resp = await this.ejecutarRequestOpenAI(
           endpoint,
           headers,
-          fallback,
+          modelo,
           oaMessages,
           herramientas
         );
+        if (modelo !== this.modelName) {
+          console.warn(`[LLM] Usando modelo de respaldo '${modelo}'.`);
+          this.modelName = modelo;
+        }
+        return resp;
+      } catch (err: unknown) {
+        ultimoError = err;
+        const msg = err instanceof Error ? err.message : String(err);
+        const reintentable =
+          msg.includes("MODEL_UNAVAILABLE") ||
+          msg.includes("Límite de tasa") ||
+          msg.includes("Tiempo de espera agotado");
+        if (!reintentable || this.providerName !== "openrouter") throw err;
+        console.warn(`[LLM] Modelo '${modelo}' fallo (${msg.slice(0, 80)}). Probando el siguiente...`);
       }
-      throw err;
     }
+    throw ultimoError instanceof Error
+      ? ultimoError
+      : new Error("No hay modelos disponibles en este momento.");
   }
 
   private async enviarGemini(

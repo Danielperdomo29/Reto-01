@@ -1063,7 +1063,7 @@ export const simular_envio = {
       }
 
       const casoOutDir = resolveOutDir(ctx.directory, safeCaso);
-      const resumenPaquetePath = path.join(casoOutDir, "paquete", "resumen.json");
+      const resumenPaquetePath = path.join(casoOutDir, "paquete", "checklist.md");
       if (!fs.existsSync(resumenPaquetePath)) {
         const msg = `No existe un paquete armado para el caso '${safeCaso}'. Debe ejecutarse proveedor_armar_paquete primero.`;
         appendAuditLog(ctx.directory, safeCaso, toolName, false, msg);

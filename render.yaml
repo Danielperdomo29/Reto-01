@@ -16,7 +16,7 @@ services:
       - key: OPENROUTER_API_KEY
         sync: false
       - key: OPENROUTER_MODEL
-        value: nvidia/nemotron-3-super-120b-a12b:free
+        value: nvidia/nemotron-3-ultra-550b-a55b:free
       - key: LLM_TIMEOUT_MS
         value: "90000"
       - key: MAX_ITERATIONS_PER_TURN

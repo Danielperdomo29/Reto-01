@@ -41,11 +41,11 @@ El área administrativa de **Periferia IT Group** (específicamente la **analist
 ---
 
 ## 4. Elección del modelo y análisis de costos
-- **Proveedor y Modelo principal:** **OpenRouter** con `nvidia/nemotron-3-super-120b-a12b:free` (120B parámetros con soporte nativo de Function Calling y alta disponibilidad sin costo para evaluación), gestionado a través de `UnifiedLLMAdapter` con soporte inmediato de fallback resiliente a Google **Gemini 2.5 Flash** y OpenAI **GPT-4o-mini**.
+- **Proveedor y Modelo principal:** **OpenRouter** con `nvidia/nemotron-3-ultra-550b-a55b:free` (respaldo automatico: `nvidia/nemotron-3-super-120b-a12b:free` y `google/gemma-4-31b-it:free`), modelo MoE de 550B parametros con function calling nativo y costo cero para evaluacion, gestionado a través de `UnifiedLLMAdapter` con soporte inmediato de fallback resiliente a Google **Gemini 2.5 Flash** y OpenAI **GPT-4o-mini**.
 - **Justificación:** Excelente adherencia a esquemas JSON de herramientas, compatibilidad estándar OpenAI API, y soporte de modelos de alto rendimiento con auto-recuperación ante cambios de disponibilidad.
 - **Costo y consumo medido por caso procesado:**
   - Un flujo completo de caso requiere 4 llamadas a herramientas encadenadas + 1 resumen interactivo (~18,000 a 25,000 tokens de contexto acumulado en el historial de sesión).
-  - En OpenRouter con el modelo seleccionado (`nvidia/nemotron-3-super-120b-a12b:free`), el costo directo de inferencia es **$0.00 USD**.
+  - En OpenRouter con el modelo seleccionado (`nvidia/nemotron-3-ultra-550b-a55b:free` (respaldo automatico: `nvidia/nemotron-3-super-120b-a12b:free` y `google/gemma-4-31b-it:free`), el costo directo de inferencia es **$0.00 USD**.
   - Si se escala a modelos comerciales en producción (ej. Gemini 2.5 Flash a $0.30 USD/1M input y $2.50 USD/1M output), procesar **1 caso completo cuesta ~$0.012 USD**.
   - Para el volumen proyectado de Periferia IT Group (**12 solicitudes mensuales**), el costo total mensual de inferencia es de **~$0.15 USD/mes**, representando una relación costo-beneficio de más del 99% frente al costo por hora de un analista.
 

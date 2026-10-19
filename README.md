@@ -10,7 +10,7 @@ Solución de nivel senior en TypeScript para automatizar la lectura de solicitud
    ```bash
    cp .env.example .env
    ```
-   *(Por defecto utiliza OpenRouter con el modelo gratuito verificado `nvidia/nemotron-3-super-120b-a12b:free`).*
+   *(Por defecto utiliza OpenRouter con el modelo gratuito verificado `nvidia/nemotron-3-ultra-550b-a55b:free` (respaldo automatico: `nvidia/nemotron-3-super-120b-a12b:free` y `google/gemma-4-31b-it:free`).*
 
 2. Instala dependencias y levanta el servidor (Frontend y Backend unificados en el puerto 3000):
    ```bash
