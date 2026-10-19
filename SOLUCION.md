@@ -1,4 +1,4 @@
-﻿# SOLUCION.md — Reto Técnico 01: Agente Conversacional "Registro como Proveedor"
+# SOLUCION.md — Reto Técnico 01: Agente Conversacional "Registro como Proveedor"
 
 ## 1. Problema en una frase y a quién le duele
 El área administrativa de **Periferia IT Group** (específicamente la **analista administrativa**) pierde horas de trabajo operativo y retrasa la facturación al transcribir manualmente entre 8 y 12 formularios mensuales de inscripción de proveedores (en Excel, PDF y portales web) y recolectar soportes legales cuya información ya existe en un repositorio interno, exponiéndose a errores de digitación en datos críticos como el NIT o cuentas bancarias.

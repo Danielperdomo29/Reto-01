@@ -1,4 +1,4 @@
-﻿# Conocimiento del Proceso: Registro como Proveedor (Periferia IT Group)
+# Conocimiento del Proceso: Registro como Proveedor (Periferia IT Group)
 
 ## 1. Propósito del Proceso
 Automatizar el diligenciamiento de formularios de registro como proveedor (Excel, PDF o Portal Web) a partir de solicitudes de clientes en Latinoamérica (CO, EC, PE, PA, HN), cruzando contra el repositorio maestro (`maestro.json`), el diccionario de sinónimos (`glosario-campos.json`) y el índice de soportes (`soportes/index.json`).

@@ -1,4 +1,4 @@
-﻿---
+---
 name: registro-proveedor
 description: Conocimiento normativo y reglas de negocio (RN1-RN5) para el registro de Periferia IT Group como proveedor ante clientes en Latinoamérica.
 ---

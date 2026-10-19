@@ -1,4 +1,4 @@
-﻿# Reto 01 — Agente Conversacional "Registro como Proveedor"
+# Reto 01 — Agente Conversacional "Registro como Proveedor"
 
 Solución de nivel senior en TypeScript para automatizar la lectura de solicitudes de clientes, mapeo de campos contra el repositorio maestro, generación de formularios (`.xlsx`, `.pdf`, `.portal`) y armado del paquete para firma con confirmación humana (HITL), cumpliendo las reglas RN1 a RN5 del PRD.
 

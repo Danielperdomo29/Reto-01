@@ -1,4 +1,4 @@
-﻿---
+---
 description: Agente conversacional para automatizar el llenado de formularios de registro como proveedor y armado de paquetes para firma legal.
 mode: primary
 permission:
