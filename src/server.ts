@@ -10,7 +10,7 @@ import { UnifiedLLMAdapter } from "./llm/provider.js";
 const directory = process.cwd();
 const PORT = Number(process.env.PORT || 3000);
 const MAX_ITERATIONS = Number(process.env.MAX_ITERATIONS_PER_TURN || 25);
-const MAX_TOKENS_SESSION = Number(process.env.MAX_TOKENS_PER_SESSION || 50000);
+const MAX_TOKENS_SESSION = Number(process.env.MAX_TOKENS_PER_SESSION || 60000);
 
 const llmAdapter = new UnifiedLLMAdapter();
 

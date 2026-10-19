@@ -118,4 +118,4 @@ Para clientes que exigen registro en portales web propietarios (SAP Ariba, Coupa
 2. **Riesgo de Desactualización Documental en el Repositorio Maestro:** Enviar un RUT o Cámara de Comercio desactualizada sin que nadie renueve el archivo en el repositorio.
    - *Mitigación:* Regla RN3 activa que bloquea `listo_para_firma` y alertas automáticas 15 días antes de `vigencia_hasta`.
 3. **Agotamiento de Cuota / Costos de API (Denial of Wallet):**
-   - *Mitigación:* Topes estrictos `MAX_ITERATIONS_PER_TURN = 25` y `MAX_TOKENS_PER_SESSION = 50000` implementados en `src/server.ts`.
+   - *Mitigación:* Topes estrictos `MAX_ITERATIONS_PER_TURN = 25` y `MAX_TOKENS_PER_SESSION = 60000` implementados en `src/server.ts`.
