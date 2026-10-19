@@ -1,10 +1,11 @@
-{
+﻿{
   "name": "reto-01-registro-proveedor",
   "version": "2.0.0",
   "private": true,
   "type": "module",
   "scripts": {
     "dev": "tsx watch src/server.ts",
+    "build": "tsc",
     "start": "tsx src/server.ts",
     "demo": "tsx demo.ts"
   },
