@@ -45,13 +45,12 @@ Se incluye el paquete desacoplado `modulo/` con las mismas herramientas y el con
 - `modulo/skill/registro-proveedor/SKILL.md` (conocimiento normativo y reglas de negocio RN1-RN5)
 - `modulo/tools/proveedor.ts` (re-exportación directa sin duplicación de código)
 
-## 5. Enlaces Públicos y Despliegue
-- **Despliegue Cloud en Render (Fullstack Node.js + API + Frontend):**
-  Desplegable automáticamente con el archivo `render.yaml` incluido en el repositorio.
-- **Túnel Seguro HTTPS en Vivo (Recomendado para la Defensa Técnica):**
-  Con el servidor corriendo localmente (`npm run dev`), genera una URL pública HTTPS instantánea:
+## 5. Enlaces Públicos y Despliegue en Producción
+- **Aplicación Web en Producción (Fullstack Node.js + API + Frontend):**
+  [https://reto-01-registro-proveedor-3vat.onrender.com](https://reto-01-registro-proveedor-3vat.onrender.com)
+- **Frontend de Respaldo / Redirección CI/CD en Netlify:**
+  [https://reto0.netlify.app](https://reto0.netlify.app) (redirige 301 permanentemente al servicio activo en Render).
+- **Túnel Alternativo HTTPS Local:**
   ```bash
   npx cloudflared tunnel --url http://localhost:3000
   ```
-- **Frontend CI/CD en Netlify:**
-  [https://reto0.netlify.app](https://reto0.netlify.app) (interfaz estática compilada con pipeline CI/CD verificado).

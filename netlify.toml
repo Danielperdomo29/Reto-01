@@ -1,7 +1,5 @@
-[build]
-  command = "npm run build"
-  publish = "web"
-
-[build.environment]
-  SECRETS_SCAN_ENABLED = "false"
-  SECRETS_SCAN_OMIT_KEYS = "MAX_TOKENS_PER_SESSION,PORT,MAX_ITERATIONS_PER_TURN"
+[[redirects]]
+  from = "/*"
+  to = "https://reto-01-registro-proveedor-3vat.onrender.com/:splat"
+  status = 301
+  force = true
