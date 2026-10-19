@@ -1,0 +1,230 @@
+﻿import {
+  ChatMessage,
+  LLMAdapter,
+  LLMResponse,
+  ToolCallRequest,
+  ToolDefinition,
+} from "./adapter.js";
+
+export class UnifiedLLMAdapter implements LLMAdapter {
+  public readonly providerName: string;
+  public readonly modelName: string;
+  private readonly apiKey: string;
+  private readonly timeoutMs: number;
+
+  constructor() {
+    const preferred = (process.env.LLM_PROVIDER || "").toLowerCase();
+    if (preferred === "openai" || (!process.env.GEMINI_API_KEY && process.env.OPENAI_API_KEY)) {
+      this.providerName = "openai";
+      this.modelName = process.env.OPENAI_MODEL || "gpt-4o-mini";
+      this.apiKey = process.env.OPENAI_API_KEY || "";
+    } else {
+      this.providerName = "gemini";
+      this.modelName = process.env.GEMINI_MODEL || "gemini-2.5-flash";
+      this.apiKey = process.env.GEMINI_API_KEY || "";
+    }
+    this.timeoutMs = Number(process.env.LLM_TIMEOUT_MS || 30000);
+  }
+
+  async enviar(
+    mensajes: ChatMessage[],
+    herramientas: ToolDefinition[]
+  ): Promise<LLMResponse> {
+    if (!this.apiKey) {
+      throw new Error(
+        `No se encontró API Key configurada para el proveedor '${this.providerName}'. Configura GEMINI_API_KEY u OPENAI_API_KEY en tu archivo .env.`
+      );
+    }
+
+    if (this.providerName === "openai") {
+      return this.enviarOpenAI(mensajes, herramientas);
+    }
+    return this.enviarGemini(mensajes, herramientas);
+  }
+
+  private async enviarGemini(
+    mensajes: ChatMessage[],
+    herramientas: ToolDefinition[]
+  ): Promise<LLMResponse> {
+    const systemMsg = mensajes.find((m) => m.role === "system");
+    const contents: Array<Record<string, unknown>> = [];
+
+    for (const m of mensajes) {
+      if (m.role === "system") continue;
+      if (m.role === "user") {
+        contents.push({ role: "user", parts: [{ text: m.content }] });
+      } else if (m.role === "assistant") {
+        const parts: Array<Record<string, unknown>> = [];
+        if (m.content) parts.push({ text: m.content });
+        if (m.toolCalls && m.toolCalls.length > 0) {
+          for (const tc of m.toolCalls) {
+            parts.push({
+              functionCall: { name: tc.name, args: tc.arguments },
+            });
+          }
+        }
+        if (parts.length > 0) contents.push({ role: "model", parts });
+      } else if (m.role === "tool") {
+        let parsedResp: unknown = m.content;
+        try {
+          parsedResp = JSON.parse(m.content);
+        } catch {
+          parsedResp = { raw: m.content };
+        }
+        contents.push({
+          role: "user",
+          parts: [
+            {
+              functionResponse: {
+                name: m.toolName || "tool",
+                response: parsedResp,
+              },
+            },
+          ],
+        });
+      }
+    }
+
+    const body: Record<string, unknown> = {
+      contents,
+      generationConfig: { temperature: 0.1 },
+    };
+
+    if (systemMsg) {
+      body.systemInstruction = { parts: [{ text: systemMsg.content }] };
+    }
+
+    if (herramientas.length > 0) {
+      body.tools = [
+        {
+          functionDeclarations: herramientas.map((h) => ({
+            name: h.name,
+            description: h.description,
+            parameters: h.parameters,
+          })),
+        },
+      ];
+    }
+
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), this.timeoutMs);
+
+    try {
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/${this.modelName}:generateContent?key=${this.apiKey}`;
+      const res = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+        signal: controller.signal,
+      });
+
+      if (!res.ok) {
+        const errText = await res.text();
+        throw new Error(`Error del proveedor Gemini (${res.status}): ${errText}`);
+      }
+
+      const data = (await res.json()) as Record<string, any>;
+      const candidate = data.candidates?.[0];
+      const parts = candidate?.content?.parts || [];
+
+      let textContent = "";
+      const toolCalls: ToolCallRequest[] = [];
+
+      for (const part of parts) {
+        if (part.text) textContent += part.text;
+        if (part.functionCall) {
+          toolCalls.push({
+            id: `call_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+            name: part.functionCall.name,
+            arguments: part.functionCall.args || {},
+          });
+        }
+      }
+
+      const totalTokens = data.usageMetadata?.totalTokenCount || 0;
+      return { content: textContent, toolCalls, usage: { totalTokens } };
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  private async enviarOpenAI(
+    mensajes: ChatMessage[],
+    herramientas: ToolDefinition[]
+  ): Promise<LLMResponse> {
+    const oaMessages = mensajes.map((m) => {
+      if (m.role === "tool") {
+        return {
+          role: "tool",
+          tool_call_id: m.toolCallId || "call_0",
+          content: m.content,
+        };
+      }
+      if (m.role === "assistant" && m.toolCalls && m.toolCalls.length > 0) {
+        return {
+          role: "assistant",
+          content: m.content || null,
+          tool_calls: m.toolCalls.map((tc) => ({
+            id: tc.id,
+            type: "function",
+            function: {
+              name: tc.name,
+              arguments: JSON.stringify(tc.arguments),
+            },
+          })),
+        };
+      }
+      return { role: m.role, content: m.content };
+    });
+
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), this.timeoutMs);
+
+    try {
+      const res = await fetch("https://api.openai.com/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${this.apiKey}`,
+        },
+        body: JSON.stringify({
+          model: this.modelName,
+          temperature: 0.1,
+          messages: oaMessages,
+          tools: herramientas.map((h) => ({
+            type: "function",
+            function: {
+              name: h.name,
+              description: h.description,
+              parameters: h.parameters,
+            },
+          })),
+        }),
+        signal: controller.signal,
+      });
+
+      if (!res.ok) {
+        const errText = await res.text();
+        throw new Error(`Error del proveedor OpenAI (${res.status}): ${errText}`);
+      }
+
+      const data = (await res.json()) as Record<string, any>;
+      const choice = data.choices?.[0]?.message;
+      const toolCalls: ToolCallRequest[] = (choice?.tool_calls || []).map(
+        (tc: any) => ({
+          id: tc.id,
+          name: tc.function.name,
+          arguments: JSON.parse(tc.function.arguments || "{}"),
+        })
+      );
+
+      return {
+        content: choice?.content || "",
+        toolCalls,
+        usage: { totalTokens: data.usage?.total_tokens || 0 },
+      };
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+}
