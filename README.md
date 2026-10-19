@@ -6,10 +6,11 @@ Solución de nivel senior en TypeScript para automatizar la lectura de solicitud
 - **Node.js** (`>= 20.0`) o **Bun** (`>= 1.1`).
 
 ## 1. Instalación y Arranque en Local (Un solo comando)
-1. Copia las variables de entorno de ejemplo y agrega tu clave de API (`GEMINI_API_KEY` u `OPENAI_API_KEY`):
+1. Copia las variables de entorno de ejemplo y agrega tu clave de API (`OPENROUTER_API_KEY`, `GEMINI_API_KEY` u `OPENAI_API_KEY`):
    ```bash
    cp .env.example .env
    ```
+   *(Por defecto utiliza OpenRouter con el modelo gratuito verificado `nvidia/nemotron-3-super-120b-a12b:free`).*
 
 2. Instala dependencias y levanta el servidor (Frontend y Backend unificados en el puerto 3000):
    ```bash
@@ -44,6 +45,13 @@ Se incluye el paquete desacoplado `modulo/` con las mismas herramientas y el con
 - `modulo/skill/registro-proveedor/SKILL.md` (conocimiento normativo y reglas de negocio RN1-RN5)
 - `modulo/tools/proveedor.ts` (re-exportación directa sin duplicación de código)
 
-## 5. Enlace Público de Prueba
-URL pública para la defensa técnica:
-`https://reto-01-proveedores.trycloudflare.com` (o túnel local activo con `npx cloudflared tunnel --url http://localhost:3000`)
+## 5. Enlaces Públicos y Despliegue
+- **Despliegue Cloud en Render (Fullstack Node.js + API + Frontend):**
+  Desplegable automáticamente con el archivo `render.yaml` incluido en el repositorio.
+- **Túnel Seguro HTTPS en Vivo (Recomendado para la Defensa Técnica):**
+  Con el servidor corriendo localmente (`npm run dev`), genera una URL pública HTTPS instantánea:
+  ```bash
+  npx cloudflared tunnel --url http://localhost:3000
+  ```
+- **Frontend CI/CD en Netlify:**
+  [https://reto0.netlify.app](https://reto0.netlify.app) (interfaz estática compilada con pipeline CI/CD verificado).

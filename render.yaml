@@ -1,0 +1,25 @@
+# Blueprint de Render: un solo servicio Node sirve el front (web/) y la API (/api/*).
+# La clave del modelo se ingresa en el panel de Render (sync: false), nunca en el repositorio.
+services:
+  - type: web
+    name: reto-01-registro-proveedor
+    runtime: node
+    plan: free
+    buildCommand: npm ci
+    startCommand: npm start
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_VERSION
+        value: "20"
+      - key: LLM_PROVIDER
+        value: openrouter
+      - key: OPENROUTER_API_KEY
+        sync: false
+      - key: OPENROUTER_MODEL
+        value: nvidia/nemotron-3-super-120b-a12b:free
+      - key: LLM_TIMEOUT_MS
+        value: "90000"
+      - key: MAX_ITERATIONS_PER_TURN
+        value: "25"
+      - key: MAX_TOKENS_PER_SESSION
+        value: "60000"

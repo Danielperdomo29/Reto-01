@@ -99,10 +99,18 @@
     const sendBtn = document.getElementById("sendBtn");
     const confirmationBanner = document.getElementById("confirmationBanner");
 
+    async function leerJson(res) {
+      const tipo = res.headers.get("content-type") || "";
+      if (!tipo.includes("application/json")) {
+        throw new Error(`el backend no respondió JSON (HTTP ${res.status}). Verifica que la API esté desplegada.`);
+      }
+      return res.json();
+    }
+
     async function checkHealth() {
       try {
         const r = await fetch("/api/health");
-        const d = await r.json();
+        const d = await leerJson(r);
         document.getElementById("healthBadge").textContent = "LLM: " + d.provider + " (" + d.model + ")";
       } catch {
         document.getElementById("healthBadge").textContent = "LLM desconectado";
@@ -187,7 +195,7 @@
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ sessionId, message: text }),
         });
-        const data = await res.json();
+        const data = await leerJson(res);
         thinkingDiv.remove();
 
         const botDiv = document.createElement("div");

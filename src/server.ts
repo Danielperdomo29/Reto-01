@@ -11,6 +11,21 @@ const directory = process.cwd();
 const PORT = Number(process.env.PORT || 3000);
 const MAX_ITERATIONS = Number(process.env.MAX_ITERATIONS_PER_TURN || 25);
 const MAX_TOKENS_SESSION = Number(process.env.MAX_TOKENS_PER_SESSION || 60000);
+const MAX_GLOBAL_TOKENS = Number(process.env.MAX_GLOBAL_TOKENS || 500000);
+let globalTokensUsed = 0;
+
+const ipRequestMap = new Map<string, { count: number; resetAt: number }>();
+function checkRateLimit(ip: string): boolean {
+  const now = Date.now();
+  const entry = ipRequestMap.get(ip);
+  if (!entry || now > entry.resetAt) {
+    ipRequestMap.set(ip, { count: 1, resetAt: now + 60000 });
+    return true;
+  }
+  if (entry.count >= 30) return false;
+  entry.count++;
+  return true;
+}
 
 const llmAdapter = new UnifiedLLMAdapter();
 
@@ -50,24 +65,31 @@ function loadSystemPrompt(): string {
 
 function buildToolDefinitions(): ToolDefinition[] {
   return Object.entries(proveedorTools).map(([name, tool]) => {
-    const properties: Record<string, { type: string; description: string }> = {};
+    const properties: Record<string, { type: string; description: string; items?: { type: string }; additionalProperties?: boolean }> = {};
     const required: string[] = [];
 
     for (const [argName, zodSchema] of Object.entries(tool.args)) {
       const schemaAny = zodSchema as z.ZodTypeAny;
-      const isOptional = schemaAny.isOptional();
-      if (!isOptional) required.push(argName);
+      if (!schemaAny.isOptional()) required.push(argName);
 
-      let type = "string";
-      const defType = (schemaAny._def as any)?.innerType?._def?.typeName || (schemaAny._def as any)?.typeName;
-      if (defType === "ZodBoolean") type = "boolean";
-      else if (defType === "ZodArray") type = "array";
-      else if (defType === "ZodRecord" || defType === "ZodObject") type = "object";
-
-      properties[argName] = {
-        type,
-        description: schemaAny.description || argName,
-      };
+      const typeName = schemaAny._def?.typeName;
+      if (typeName === "ZodBoolean") {
+        properties[argName] = { type: "boolean", description: schemaAny.description || argName };
+      } else if (typeName === "ZodArray") {
+        properties[argName] = {
+          type: "array",
+          items: { type: "string" },
+          description: schemaAny.description || argName,
+        };
+      } else if (typeName === "ZodRecord" || typeName === "ZodObject") {
+        properties[argName] = {
+          type: "object",
+          additionalProperties: true,
+          description: schemaAny.description || argName,
+        };
+      } else {
+        properties[argName] = { type: "string", description: schemaAny.description || argName };
+      }
     }
 
     return {
@@ -105,100 +127,130 @@ async function runAgentTurn(session: SessionState, userMessage: string) {
     };
   }
 
+  if (globalTokensUsed > MAX_GLOBAL_TOKENS) {
+    return {
+      reply: `Se alcanzó el tope de seguridad presupuestal global (${MAX_GLOBAL_TOKENS} tokens). Comuníquese con el administrador.`,
+      toolCalls: [],
+      needsConfirmation: false,
+    };
+  }
+
   let iterations = 0;
   let finalReply = "";
   let needsConfirmation = false;
 
-  while (iterations < MAX_ITERATIONS) {
-    iterations++;
+  try {
+    while (iterations < MAX_ITERATIONS) {
+      iterations++;
 
-    const response = await llmAdapter.enviar(session.messages, toolDefs);
-    session.totalTokensUsed += response.usage?.totalTokens || 0;
+      const response = await llmAdapter.enviar(session.messages, toolDefs);
+      const usedTokens = response.usage?.totalTokens || 0;
+      session.totalTokensUsed += usedTokens;
+      globalTokensUsed += usedTokens;
 
-    if (!response.toolCalls || response.toolCalls.length === 0) {
-      finalReply = response.content;
-      session.messages.push({ role: "assistant", content: finalReply });
-      break;
-    }
-
-    session.messages.push({
-      role: "assistant",
-      content: response.content || "",
-      toolCalls: response.toolCalls,
-    });
-
-    for (const tc of response.toolCalls) {
-      const toolObj = (proveedorTools as Record<string, any>)[tc.name];
-      if (!toolObj) {
-        const errPayload = { ok: false, error: `Herramienta desconocida: ${tc.name}` };
-        session.messages.push({
-          role: "tool",
-          toolCallId: tc.id,
-          toolName: tc.name,
-          content: JSON.stringify(errPayload),
-        });
-        continue;
+      if (!response.toolCalls || response.toolCalls.length === 0) {
+        finalReply = response.content;
+        session.messages.push({ role: "assistant", content: finalReply });
+        break;
       }
-
-      // Guardia RN4 / CA3: Si el modelo intenta llamar proveedor_simular_envio sin que el humano haya confirmado en este turno
-      if (tc.name === "proveedor_simular_envio" && !userConfirmedThisTurn) {
-        const blockedPayload = {
-          ok: false,
-          error:
-            "RN4: No se puede ejecutar proveedor_simular_envio sin confirmación explícita del usuario en el turno actual.",
-        };
-        turnToolCalls.push({
-          name: tc.name,
-          args: tc.arguments,
-          result: blockedPayload,
-          ok: false,
-        });
-        session.messages.push({
-          role: "tool",
-          toolCallId: tc.id,
-          toolName: tc.name,
-          content: JSON.stringify(blockedPayload),
-        });
-        needsConfirmation = true;
-        continue;
-      }
-
-      const rawResultStr = await toolObj.execute(tc.arguments, {
-        directory,
-        sessionId: session.id,
-      });
-      let parsedResult: any = { ok: false };
-      try {
-        parsedResult = JSON.parse(rawResultStr);
-      } catch {
-        parsedResult = { ok: false, error: rawResultStr };
-      }
-
-      if (tc.name === "proveedor_armar_paquete" && parsedResult.ok) {
-        session.awaitingConfirmationForCase = String(tc.arguments.caso || "");
-        needsConfirmation = true;
-      }
-      if (tc.name === "proveedor_simular_envio" && parsedResult.ok) {
-        session.awaitingConfirmationForCase = null;
-        needsConfirmation = false;
-      }
-
-      const trace: ToolCallTrace = {
-        name: tc.name,
-        args: tc.arguments,
-        result: parsedResult,
-        ok: Boolean(parsedResult.ok),
-      };
-      turnToolCalls.push(trace);
-      session.toolCallHistory.push(trace);
 
       session.messages.push({
-        role: "tool",
-        toolCallId: tc.id,
-        toolName: tc.name,
-        content: rawResultStr,
+        role: "assistant",
+        content: response.content || "",
+        toolCalls: response.toolCalls,
       });
+
+      for (const tc of response.toolCalls) {
+        const toolObj = (proveedorTools as Record<string, {
+          description: string;
+          args: Record<string, z.ZodTypeAny>;
+          execute: (args: unknown, ctx: { directory: string; sessionId: string }) => Promise<string>;
+        }>)[tc.name];
+
+        if (!toolObj) {
+          const errPayload = { ok: false, error: `Herramienta desconocida: ${tc.name}` };
+          session.messages.push({
+            role: "tool",
+            toolCallId: tc.id,
+            toolName: tc.name,
+            content: JSON.stringify(errPayload),
+          });
+          continue;
+        }
+
+        // Guardia RN4 / CA3 Estricta:
+        // No se permite enviar sin que previamente se haya armado y presentado el paquete,
+        // Y el usuario confirme en un turno posterior explícito.
+        if (tc.name === "proveedor_simular_envio") {
+          const targetCase = String(tc.arguments.caso || "");
+          const armedInSameTurn = turnToolCalls.some((t) => t.name === "proveedor_armar_paquete");
+          const validPriorConfirmationState = session.awaitingConfirmationForCase === targetCase;
+
+          if (armedInSameTurn || !validPriorConfirmationState || !userConfirmedThisTurn) {
+            const blockedPayload = {
+              ok: false,
+              error:
+                "RN4 / CA3: Violación de guardia de seguridad. Para simular el envío, el paquete debe haberse armado y presentado previamente para revisión del analista, y el usuario debe confirmar explícitamente en un turno independiente.",
+            };
+            turnToolCalls.push({
+              name: tc.name,
+              args: tc.arguments,
+              result: blockedPayload,
+              ok: false,
+            });
+            session.messages.push({
+              role: "tool",
+              toolCallId: tc.id,
+              toolName: tc.name,
+              content: JSON.stringify(blockedPayload),
+            });
+            needsConfirmation = true;
+            continue;
+          }
+        }
+
+        const rawResultStr = await toolObj.execute(tc.arguments, {
+          directory,
+          sessionId: session.id,
+        });
+
+        let parsedResult: Record<string, unknown> = { ok: false };
+        try {
+          parsedResult = JSON.parse(rawResultStr) as Record<string, unknown>;
+        } catch {
+          parsedResult = { ok: false, error: rawResultStr };
+        }
+
+        if (tc.name === "proveedor_armar_paquete" && parsedResult.ok) {
+          session.awaitingConfirmationForCase = String(tc.arguments.caso || "");
+          needsConfirmation = true;
+        }
+        if (tc.name === "proveedor_simular_envio" && parsedResult.ok) {
+          session.awaitingConfirmationForCase = null;
+          needsConfirmation = false;
+        }
+
+        const trace: ToolCallTrace = {
+          name: tc.name,
+          args: tc.arguments,
+          result: parsedResult,
+          ok: Boolean(parsedResult.ok),
+        };
+        turnToolCalls.push(trace);
+        session.toolCallHistory.push(trace);
+
+        session.messages.push({
+          role: "tool",
+          toolCallId: tc.id,
+          toolName: tc.name,
+          content: rawResultStr,
+        });
+      }
     }
+  } catch (turnErr: unknown) {
+    const errorMsg = turnErr instanceof Error ? turnErr.message : String(turnErr);
+    finalReply = `Aviso del agente: Ocurrió un incidente durante la comunicación con el modelo: ${errorMsg}. Las herramientas ejecutadas hasta el momento han sido preservadas en la auditoría.`;
+    session.messages.push({ role: "assistant", content: finalReply });
   }
 
   if (iterations >= MAX_ITERATIONS && !finalReply) {
@@ -230,6 +282,13 @@ const server = http.createServer(async (req, res) => {
   if (req.method === "OPTIONS") {
     res.writeHead(204);
     res.end();
+    return;
+  }
+
+  const clientIp = (req.headers["x-forwarded-for"] as string) || req.socket.remoteAddress || "local";
+  if (!checkRateLimit(clientIp)) {
+    res.writeHead(429, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ ok: false, error: "Límite de peticiones por minuto superado (Rate Limit)." }));
     return;
   }
 
@@ -270,8 +329,9 @@ const server = http.createServer(async (req, res) => {
       try {
         const { sessionId = "default-session", message = "" } = JSON.parse(
           body || "{}"
-        );
-        if (!message.trim()) {
+        ) as { sessionId?: string; message?: string };
+
+        if (!message || !message.trim()) {
           res.writeHead(400, { "Content-Type": "application/json" });
           res.end(JSON.stringify({ ok: false, error: "El mensaje está vacío." }));
           return;
@@ -292,8 +352,7 @@ const server = http.createServer(async (req, res) => {
         const result = await runAgentTurn(session, message);
         res.writeHead(200, { "Content-Type": "application/json" });
         res.end(JSON.stringify({ ok: true, ...result }));
-      } catch (err) {
-        // CA5: Error claro en el chat sin tumbar la sesión
+      } catch (err: unknown) {
         const errorMsg =
           err instanceof Error ? err.message : "Error inesperado en el servidor";
         res.writeHead(200, { "Content-Type": "application/json" });

@@ -37,8 +37,31 @@ const EQUIVALENTE_TRIBUTARIO: Record<string, string> = {
   HN: "RTN",
 };
 
+export const casoIdRegex = /^[a-z0-9-]+$/;
+
+export function sanitizeCaso(caso: string): string {
+  const cleaned = String(caso || "").trim();
+  if (!/^[a-z0-9-]+$/.test(cleaned)) {
+    throw new Error(`Identificador de caso invalido: '${caso}'. Solo se permiten letras minusculas, numeros y guiones.`);
+  }
+  return cleaned;
+}
+
+export function resolveOutDir(directory: string, caso: string): string {
+  const safeCaso = sanitizeCaso(caso);
+  const outRoot = path.resolve(directory, "out");
+  const target = path.resolve(outRoot, safeCaso);
+  if (!target.startsWith(outRoot)) {
+    throw new Error("Violacion de seguridad: Intento de path traversal detectado.");
+  }
+  return target;
+}
+
 function getReferenceDate(): string {
-  return process.env.REFERENCE_DATE || "2026-09-03";
+  if (process.env.REFERENCE_DATE) {
+    return process.env.REFERENCE_DATE;
+  }
+  return new Date().toISOString().split("T")[0];
 }
 
 function normalizeText(text: string): string {
@@ -111,7 +134,7 @@ function findCaseFile(casoDir: string, caso: string, prefix: string): string | n
 // 1. proveedor_leer_solicitud
 // ============================================================================
 const leerSolicitudSchema = z.object({
-  caso: z.string().describe("Nombre de la carpeta del caso en fixtures/reto-01/casos/"),
+  caso: z.string().regex(casoIdRegex, "El caso solo puede contener letras minusculas, numeros y guiones").describe("Nombre de la carpeta del caso en fixtures/reto-01/casos/"),
 });
 
 export const leer_solicitud = {
@@ -162,36 +185,41 @@ export const leer_solicitud = {
       const campos: CampoSolicitado[] = [];
       const celdasPath = findCaseFile(casoDir, caso, "plantilla-celdas");
       const camposPath = findCaseFile(casoDir, caso, "plantilla-campos");
+      let advertenciaPlantilla: string | null = null;
 
-      if (celdasPath && fs.existsSync(celdasPath)) {
-        const rawCeldas = JSON.parse(fs.readFileSync(celdasPath, "utf8"));
-        const listaCeldas = Array.isArray(rawCeldas)
-          ? rawCeldas
-          : rawCeldas.celdas || rawCeldas.campos || [];
-        for (const item of listaCeldas) {
-          campos.push({
-            etiqueta: String(item.etiqueta || item.campo || item.label || "").trim(),
-            hoja: item.hoja || "Registro",
-            celda_etiqueta: item.celda_etiqueta,
-            celda_valor: item.celda_valor,
-            obligatorio: item.obligatorio ?? true,
-          });
-        }
-      } else if (camposPath && fs.existsSync(camposPath)) {
-        const rawCampos = JSON.parse(fs.readFileSync(camposPath, "utf8"));
-        const listaCampos = Array.isArray(rawCampos)
-          ? rawCampos
-          : rawCampos.campos || [];
-        for (const item of listaCampos) {
-          if (typeof item === "string") {
-            campos.push({ etiqueta: item.trim(), obligatorio: true });
-          } else {
+      try {
+        if (celdasPath && fs.existsSync(celdasPath)) {
+          const rawCeldas = JSON.parse(fs.readFileSync(celdasPath, "utf8"));
+          const listaCeldas = Array.isArray(rawCeldas)
+            ? rawCeldas
+            : rawCeldas.celdas || rawCeldas.campos || [];
+          for (const item of listaCeldas) {
             campos.push({
               etiqueta: String(item.etiqueta || item.campo || item.label || "").trim(),
+              hoja: item.hoja || "Registro",
+              celda_etiqueta: item.celda_etiqueta,
+              celda_valor: item.celda_valor,
               obligatorio: item.obligatorio ?? true,
             });
           }
+        } else if (camposPath && fs.existsSync(camposPath)) {
+          const rawCampos = JSON.parse(fs.readFileSync(camposPath, "utf8"));
+          const listaCampos = Array.isArray(rawCampos)
+            ? rawCampos
+            : rawCampos.campos || [];
+          for (const item of listaCampos) {
+            if (typeof item === "string") {
+              campos.push({ etiqueta: item.trim(), obligatorio: true });
+            } else {
+              campos.push({
+                etiqueta: String(item.etiqueta || item.campo || item.label || "").trim(),
+                obligatorio: item.obligatorio ?? true,
+              });
+            }
+          }
         }
+      } catch (errTpl: unknown) {
+        advertenciaPlantilla = `Plantilla ilegible o corrupta: ${errTpl instanceof Error ? errTpl.message : String(errTpl)}. Se procede con el checklist de soportes.`;
       }
 
       const soportesPath = findCaseFile(casoDir, caso, "soportes-exigidos");
@@ -218,6 +246,7 @@ export const leer_solicitud = {
         formato,
         campos,
         soportes,
+        advertencia: advertenciaPlantilla,
       };
 
       const resumen = `Solicitud leida (${data.cliente}, pais ${data.pais}, formato ${data.formato}, ${campos.length} campos, ${soportes.length} soportes).`;
@@ -235,11 +264,8 @@ export const leer_solicitud = {
 // 2. proveedor_mapear_campos
 // ============================================================================
 const mapearCamposSchema = z.object({
-  caso: z.string().describe("Nombre de la carpeta del caso en fixtures/reto-01/casos/"),
-  campos: z
-    .array(z.union([z.string(), z.record(z.any())]))
-    .optional()
-    .describe("Lista de etiquetas o descriptores de campos solicitados en la plantilla"),
+  caso: z.string().regex(casoIdRegex, "El caso solo puede contener letras minusculas, numeros y guiones").describe("Nombre de la carpeta del caso"),
+  campos: z.array(z.union([z.string(), z.record(z.unknown())])).optional().describe("Lista opcional de etiquetas de campos"),
 });
 
 export const mapear_campos = {
@@ -286,7 +312,21 @@ export const mapear_campos = {
       }
 
       const paisCliente: string = lecturaRaw.data.pais;
-      const plantillaCampos: CampoSolicitado[] = lecturaRaw.data.campos;
+      const plantillaCampos: CampoSolicitado[] = lecturaRaw.data.campos || [];
+
+      if (plantillaCampos.length === 0) {
+        const emptyData = {
+          llenos: [],
+          requiere_confirmacion: [],
+          faltantes: [],
+          advertencia: lecturaRaw.data?.advertencia || "Sin campos mapeables debido a plantilla ilegible o vacia.",
+        };
+        const casoOutDir = resolveOutDir(ctx.directory, caso);
+        fs.mkdirSync(casoOutDir, { recursive: true });
+        fs.writeFileSync(path.join(casoOutDir, "mapeo.json"), JSON.stringify(emptyData, null, 2), "utf8");
+        appendAuditLog(ctx.directory, caso, toolName, true, "Mapeo completado sin campos por plantilla vacia o corrupta.");
+        return JSON.stringify({ ok: true, data: emptyData });
+      }
 
       const camposAProcesar: CampoSolicitado[] =
         parsed.data.campos && parsed.data.campos.length > 0
@@ -462,7 +502,7 @@ export const mapear_campos = {
         requiere_confirmacion,
       };
 
-      const casoOutDir = path.join(ctx.directory, "out", caso);
+      const casoOutDir = resolveOutDir(ctx.directory, caso);
       fs.mkdirSync(casoOutDir, { recursive: true });
       fs.writeFileSync(
         path.join(casoOutDir, "mapeo.json"),
@@ -485,11 +525,8 @@ export const mapear_campos = {
 // 3. proveedor_generar_formulario
 // ============================================================================
 const generarFormularioSchema = z.object({
-  caso: z.string().describe("Nombre de la carpeta del caso en fixtures/reto-01/casos/"),
-  mapeo: z
-    .record(z.any())
-    .optional()
-    .describe("Objeto resultado de proveedor_mapear_campos con llenos, faltantes y requiere_confirmacion"),
+  caso: z.string().regex(casoIdRegex, "El caso solo puede contener letras minusculas, numeros y guiones").describe("Nombre de la carpeta del caso en fixtures/reto-01/casos/"),
+  mapeo: z.record(z.unknown()).optional().describe("Opcional: el mapeo se lee siempre de forma segura desde out/<caso>/mapeo.json para prevenir inyecciones"),
 });
 
 export const generar_formulario = {
@@ -520,21 +557,23 @@ export const generar_formulario = {
       const cliente: string = lecturaRaw.data.cliente;
       const pais: string = lecturaRaw.data.pais;
 
-      let mapeoData = parsed.data.mapeo;
-      const cachedMapeoPath = path.join(ctx.directory, "out", caso, "mapeo.json");
-      if (
-        !mapeoData ||
-        (!Array.isArray(mapeoData.llenos) && !Array.isArray(mapeoData.requiere_confirmacion))
-      ) {
-        if (fs.existsSync(cachedMapeoPath)) {
-          mapeoData = JSON.parse(fs.readFileSync(cachedMapeoPath, "utf8"));
-        } else {
-          const calc = JSON.parse(await mapear_campos.execute({ caso }, ctx));
-          if (!calc.ok) {
-            return JSON.stringify({ ok: false, error: calc.error });
-          }
-          mapeoData = calc.data;
+      const casoOutDir = resolveOutDir(ctx.directory, caso);
+      const cachedMapeoPath = path.join(casoOutDir, "mapeo.json");
+      let mapeoData: {
+        llenos: CampoMapeado[];
+        requiere_confirmacion: CampoMapeado[];
+        faltantes: CampoMapeado[];
+      };
+
+      // Seguridad CA2: Cargar siempre el mapeo verificado desde out/<caso>/mapeo.json para prevenir inyecciones del LLM
+      if (fs.existsSync(cachedMapeoPath)) {
+        mapeoData = JSON.parse(fs.readFileSync(cachedMapeoPath, "utf8"));
+      } else {
+        const calc = JSON.parse(await mapear_campos.execute({ caso }, ctx));
+        if (!calc.ok) {
+          return JSON.stringify({ ok: false, error: calc.error });
         }
+        mapeoData = calc.data;
       }
 
       const llenos: CampoMapeado[] = mapeoData?.llenos || [];
@@ -548,7 +587,6 @@ export const generar_formulario = {
         porEtiqueta.set(normalizeText(m.etiqueta), m);
       }
 
-      const casoOutDir = path.join(ctx.directory, "out", caso);
       fs.mkdirSync(casoOutDir, { recursive: true });
 
       if (formato === "portal") {
@@ -712,7 +750,7 @@ export const generar_formulario = {
 // 4. proveedor_armar_paquete
 // ============================================================================
 const armarPaqueteSchema = z.object({
-  caso: z.string().describe("Nombre de la carpeta del caso en fixtures/reto-01/casos/"),
+  caso: z.string().regex(casoIdRegex, "El caso solo puede contener letras minusculas, numeros y guiones").describe("Nombre de la carpeta del caso en fixtures/reto-01/casos/"),
 });
 
 export const armar_paquete = {
@@ -742,7 +780,7 @@ export const armar_paquete = {
 
       const { cliente, pais, formato, soportes: soportesExigidos } = lecturaRaw.data;
 
-      const casoOutDir = path.join(ctx.directory, "out", caso);
+      const casoOutDir = resolveOutDir(ctx.directory, caso);
       const cachedMapeoPath = path.join(casoOutDir, "mapeo.json");
       let mapeoData: {
         llenos: CampoMapeado[];
@@ -1009,15 +1047,31 @@ export const simular_envio = {
       }
 
       const { caso, confirmado } = parsed.data;
+      const safeCaso = sanitizeCaso(caso);
       if (!confirmado) {
         const msg = "requiere confirmación explícita";
-        appendAuditLog(ctx.directory, caso, toolName, false, msg);
+        appendAuditLog(ctx.directory, safeCaso, toolName, false, msg);
         return JSON.stringify({ ok: false, error: msg });
       }
 
-      const casoOutDir = path.join(ctx.directory, "out", caso);
+      const baseFixtures = resolveFixturesDir(ctx.directory);
+      const casoDir = path.join(baseFixtures, "casos", safeCaso);
+      if (!fs.existsSync(casoDir)) {
+        const msg = `El caso '${safeCaso}' no existe en casos/`;
+        appendAuditLog(ctx.directory, safeCaso, toolName, false, msg);
+        return JSON.stringify({ ok: false, error: msg });
+      }
+
+      const casoOutDir = resolveOutDir(ctx.directory, safeCaso);
+      const resumenPaquetePath = path.join(casoOutDir, "paquete", "resumen.json");
+      if (!fs.existsSync(resumenPaquetePath)) {
+        const msg = `No existe un paquete armado para el caso '${safeCaso}'. Debe ejecutarse proveedor_armar_paquete primero.`;
+        appendAuditLog(ctx.directory, safeCaso, toolName, false, msg);
+        return JSON.stringify({ ok: false, error: msg });
+      }
+
       fs.mkdirSync(casoOutDir, { recursive: true });
-      const relPath = `out/${caso}/ENVIO-SIMULADO.md`;
+      const relPath = `out/${safeCaso}/ENVIO-SIMULADO.md`;
       const absPath = path.join(ctx.directory, relPath);
 
       const content = [

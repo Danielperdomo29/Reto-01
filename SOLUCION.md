@@ -41,12 +41,13 @@ El área administrativa de **Periferia IT Group** (específicamente la **analist
 ---
 
 ## 4. Elección del modelo y análisis de costos
-- **Proveedor y Modelo principal:** Google **Gemini 2.5 Flash** (`gemini-2.5-flash`) a través del adaptador desacoplado `UnifiedLLMAdapter` (con soporte inmediato de fallback a OpenAI `gpt-4o-mini`).
-- **Justificación:** Excelente adherencia a esquemas JSON de *Function Calling*, baja latencia (< 1.2s por iteración) y ventana de contexto amplia con costo marginal.
-- **Costo estimado por caso procesado:**
-  - Un caso completo requiere 4 llamadas a herramientas + 1 respuesta final (~3,500 tokens de entrada acumulados y ~600 tokens de salida).
-  - Con tarifas de `gemini-2.5-flash` (~$0.15 USD / 1M tokens input y ~$0.60 USD / 1M tokens output), procesar **1 caso cuesta ~$0.0009 USD** (menos de una décima de centavo de dólar).
-  - Para el volumen de Periferia (**12 solicitudes/mes**), el costo mensual de inferencia es **~$0.011 USD/mes**.
+- **Proveedor y Modelo principal:** **OpenRouter** con `nvidia/nemotron-3-super-120b-a12b:free` (120B parámetros con soporte nativo de Function Calling y alta disponibilidad sin costo para evaluación), gestionado a través de `UnifiedLLMAdapter` con soporte inmediato de fallback resiliente a Google **Gemini 2.5 Flash** y OpenAI **GPT-4o-mini**.
+- **Justificación:** Excelente adherencia a esquemas JSON de herramientas, compatibilidad estándar OpenAI API, y soporte de modelos de alto rendimiento con auto-recuperación ante cambios de disponibilidad.
+- **Costo y consumo medido por caso procesado:**
+  - Un flujo completo de caso requiere 4 llamadas a herramientas encadenadas + 1 resumen interactivo (~18,000 a 25,000 tokens de contexto acumulado en el historial de sesión).
+  - En OpenRouter con el modelo seleccionado (`nvidia/nemotron-3-super-120b-a12b:free`), el costo directo de inferencia es **$0.00 USD**.
+  - Si se escala a modelos comerciales en producción (ej. Gemini 2.5 Flash a $0.30 USD/1M input y $2.50 USD/1M output), procesar **1 caso completo cuesta ~$0.012 USD**.
+  - Para el volumen proyectado de Periferia IT Group (**12 solicitudes mensuales**), el costo total mensual de inferencia es de **~$0.15 USD/mes**, representando una relación costo-beneficio de más del 99% frente al costo por hora de un analista.
 
 ---
 
@@ -91,7 +92,14 @@ Para clientes que exigen registro en portales web propietarios (SAP Ariba, Coupa
 
 ---
 
-## 8. Cobertura de Historias de Usuario y qué falta para producción
+## 8. Cobertura de Historias de Usuario, Justificación de Dependencias y Producción
+
+### 8.1 Justificación técnica de dependencias (Requisito no funcional PRD)
+- **`dotenv` (^16.4.5):** Carga segura de credenciales locales desde `.env` sin quemar secretos ni tokens en código fuente ni en el historial de Git.
+- **`exceljs` (^4.4.0):** Manipulación binaria pura de hojas de cálculo `.xlsx`, permitiendo generar libros con múltiples pestañas (`Datos Proveedor` y `Datos Bancarios`) y escribir en coordenadas de celda exactas (ej. B5, C12) requeridas por las plantillas corporativas.
+- **`pdf-lib` (^1.17.1):** Motor ligero y determinista de generación de PDFs en memoria sin requerir navegadores embebidos ni binarios de sistema (evitando dependencias pesadas como Puppeteer/Chromium de 300MB).
+- **`zod` (^3.23.8):** Validación estricta y tipada en tiempo de ejecución de todas las entradas y salidas de las herramientas, mitigando riesgos de inyección y saneando rutas para prevenir *path traversal*.
+- **`tsx` (^4.19.0):** Ejecutor nativo de TypeScript y módulos ESM modernos en Node.js >= 20 sin transpilar archivos `.js` residuales en el árbol de trabajo.
 
 | Historia de Usuario | Estado | Detalle de implementación | Qué falta para Producción |
 |---|---|---|---|
@@ -104,8 +112,8 @@ Para clientes que exigen registro en portales web propietarios (SAP Ariba, Coupa
 ---
 
 ## 9. Declaración de uso de IA
-- **Asistente utilizado:** Google Gemini.
-- **Para qué se utilizó:** Aceleración del scaffolding TypeScript, estructuración de las llamadas a `exceljs` y `pdf-lib`, diseño del frontend en Tailwind CSS y revisión cruzada de las reglas RN1–RN5 del PRD.
+- **Asistentes utilizados:** Google Gemini, Antigravity IDE (DeepMind) y Claude Code.
+- **Para qué se utilizó:** Aceleración del scaffolding TypeScript, estructuración de esquemas tipados Zod, generación de binarios Excel/PDF con `exceljs`/`pdf-lib`, diseño responsivo del frontend en Tailwind CSS y auditoría técnica cruzada de reglas RN1 a RN5 del PRD.
 - **Qué se descartó y por qué:**
   - Se descartó usar librerías de terceros para convertir HTML a PDF (como `puppeteer`) porque añaden >300 MB de dependencias binarias y ralentizan el arranque en menos de 2 minutos exigido en la sección 8.
   - Se descartó delegar al LLM la validación de fechas de vencimiento de soportes; en su lugar, el cálculo `vigencia_hasta < fechaReferencia` se programó de forma 100% determinista dentro de `proveedor_armar_paquete`.

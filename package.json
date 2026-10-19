@@ -3,6 +3,9 @@
   "version": "2.0.0",
   "private": true,
   "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
   "scripts": {
     "dev": "tsx watch src/server.ts",
     "build": "tsc --noEmit",
@@ -13,11 +16,11 @@
     "dotenv": "^16.4.5",
     "exceljs": "^4.4.0",
     "pdf-lib": "^1.17.1",
+    "tsx": "^4.19.0",
     "zod": "^3.23.8"
   },
   "devDependencies": {
     "@types/node": "^20.14.0",
-    "tsx": "^4.19.0",
     "typescript": "^5.5.4"
   }
 }
